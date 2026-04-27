@@ -12,7 +12,8 @@ import {
   Monitor, 
   AlertCircle,
   BadgeCheck,
-  Zap
+  Zap,
+  Image as ImageIcon
 } from 'lucide-react';
 
 // Biểu tượng Zalo SVG tùy chỉnh
@@ -24,10 +25,10 @@ const ZaloIcon = ({ size = 18, className = "" }: { size?: number; className?: st
 );
 
 const STYLES = [
-  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio photography, soft commercial lighting, clean background' },
-  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business poster style, sleek graphic elements, corporate colors' },
-  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D render, soft global illumination, octane style' },
-  { id: 'editorial', name: 'Tạp chí Fashion', prompt: 'editorial fashion magazine style, high-end aesthetics, sharp focus' },
+  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio photography, soft commercial lighting, clean professional background, sharp focus' },
+  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business advertisement style, clean graphic elements, professional color grading, minimalist layout' },
+  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D product render, soft global illumination, octane render style, stylized environment' },
+  { id: 'editorial', name: 'Tạp chí Fashion', prompt: 'editorial fashion magazine style, high-end aesthetics, dramatic lighting, premium feel' },
 ];
 
 const PLATFORMS = [
@@ -41,16 +42,18 @@ interface ImageData {
   base64: string | null;
 }
 
-// API Key được cung cấp tự động bởi môi trường chạy tại runtime
+// API Key mặc định để trống, hệ thống sẽ tự nạp tại runtime hoặc lấy từ biến môi trường
 const apiKey = "";
 
 export default function App() {
   const [images, setImages] = useState<{
     human: ImageData;
     product: ImageData;
+    reference: ImageData;
   }>({
     human: { preview: null, base64: null },
-    product: { preview: null, base64: null }
+    product: { preview: null, base64: null },
+    reference: { preview: null, base64: null }
   });
   
   const [mainTitle, setMainTitle] = useState('');
@@ -77,32 +80,47 @@ export default function App() {
 
   const generateDesign = async () => {
     if (!images.human.base64 || !images.product.base64) {
-      setError("Hãy tải lên ảnh Nhân vật và ảnh Sản phẩm.");
+      setError("Bạn cần tải lên ít nhất ảnh Nhân vật và ảnh Sản phẩm.");
       return;
     }
     
+    // Cách lấy API Key an toàn để tránh lỗi biên dịch "import.meta"
+    let finalKey = apiKey;
+    if (!finalKey) {
+      try {
+        // @ts-ignore
+        finalKey = (import.meta as any).env.VITE_GEMINI_API_KEY || "";
+      } catch (e) {
+        finalKey = "";
+      }
+    }
+    
+    if (!finalKey) {
+      setError("Lỗi: Không tìm thấy API Key. Hãy cấu hình VITE_GEMINI_API_KEY trên Vercel và chọn Redeploy.");
+      return;
+    }
+
     setIsGenerating(true);
     setError(null);
     setResultImage(null);
     
     try {
-      // BƯỚC 1: Sử dụng Gemini 2.5 Flash để phân tích và viết Prompt
+      // BƯỚC 1: Sử dụng Gemini 1.5 Flash để phân tích ảnh và viết Prompt
       setStatusMsg("Đang phân tích diện mạo và sản phẩm...");
       
-      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: `Phân tích hai hình ảnh này. Ảnh 1 là một người. Ảnh 2 là một sản phẩm. 
-              Hãy tạo một prompt tiếng Anh chi tiết cho công cụ tạo ảnh AI để tạo ra một poster quảng cáo chuyên nghiệp. 
-              Người trong ảnh nên cầm hoặc tương tác với sản phẩm một cách tự nhiên. 
-              Mô tả ngoại hình của người, sản phẩm và bối cảnh. 
-              Phong cách: ${selectedStyle.prompt}. 
-              Thêm tiêu đề văn bản: ${mainTitle}` },
+              { text: `Analyze these images. Image 1: Person's face. Image 2: Product. ${images.reference.base64 ? 'Image 3: Style reference.' : ''} 
+              Create a detailed English prompt for Imagen 4.0. The person from Image 1 must be interacting with the product from Image 2. 
+              The background style should be: ${selectedStyle.prompt}. 
+              Include text overlay: "${mainTitle}". Ensure it looks like a professional commercial poster.` },
               { inlineData: { mimeType: "image/png", data: images.human.base64 } },
-              { inlineData: { mimeType: "image/png", data: images.product.base64 } }
+              { inlineData: { mimeType: "image/png", data: images.product.base64 } },
+              ...(images.reference.base64 ? [{ inlineData: { mimeType: "image/png", data: images.reference.base64 } }] : [])
             ]
           }]
         })
@@ -112,11 +130,11 @@ export default function App() {
       if (analysisData.error) throw new Error(analysisData.error.message);
       
       const promptText = analysisData.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!promptText) throw new Error("Không thể tạo prompt từ phân tích ảnh.");
+      if (!promptText) throw new Error("Không thể tạo kịch bản thiết kế.");
 
-      // BƯỚC 2: Sử dụng Imagen 4.0 để tạo ảnh từ Prompt đã phân tích
+      // BƯỚC 2: Sử dụng Imagen 4.0 để tạo ảnh (Đây là mô hình tạo ảnh ổn định nhất)
       setStatusMsg("AI đang vẽ thiết kế marketing...");
-      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
+      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${finalKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -132,11 +150,11 @@ export default function App() {
       if (base64Image) {
         setResultImage(`data:image/png;base64,${base64Image}`);
       } else {
-        throw new Error("Không nhận được ảnh từ Imagen. Vui lòng thử lại.");
+        throw new Error("Không nhận được ảnh từ hệ thống tạo ảnh.");
       }
 
     } catch (err: any) {
-      setError("Lỗi: " + err.message);
+      setError(err.message);
     } finally {
       setIsGenerating(false);
       setStatusMsg("");
@@ -151,7 +169,7 @@ export default function App() {
       ) : (
         <>
           <div className={`${colorClass} p-3 rounded-2xl mb-2 shadow-sm`}><Icon size={20} /></div>
-          <span className="text-[10px] font-black uppercase">{label}</span>
+          <span className="text-[10px] font-black uppercase tracking-tight">{label}</span>
           <span className="text-[8px] text-slate-400 uppercase tracking-widest font-bold">{subLabel}</span>
         </>
       )}
@@ -162,38 +180,42 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
       <header className="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg"><Sparkles className="text-white" size={20} /></div>
+          <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-100"><Sparkles className="text-white" size={20} /></div>
           <div>
             <h1 className="font-black tracking-tighter uppercase text-lg leading-none">AI DESIGNER <span className="text-indigo-600">PRO</span></h1>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1 italic">Thiết kế bởi Imagen 4.0</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Marketing Studio AI v4.0</p>
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
+        {/* Panel Điều khiển */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
               <Zap size={14} className="text-indigo-500" /> 1. Nguồn hình ảnh
             </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <UploadBox type="human" label="Nhân vật" icon={User} colorClass="bg-blue-50 text-blue-600" subLabel="Diện mạo" />
-              <UploadBox type="product" label="Sản phẩm" icon={Package} colorClass="bg-emerald-50 text-emerald-600" subLabel="Sản phẩm" />
+            <div className="grid grid-cols-3 gap-3">
+              <UploadBox type="human" label="Nhân vật" icon={User} colorClass="bg-blue-50 text-blue-600" subLabel="Gương mặt" />
+              <UploadBox type="product" label="Sản phẩm" icon={Package} colorClass="bg-emerald-50 text-emerald-600" subLabel="Vật thể" />
+              <UploadBox type="reference" label="Tham chiếu" icon={FileSearch} colorClass="bg-amber-50 text-amber-600" subLabel="Bối cảnh" />
             </div>
           </div>
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
-            <h2 className="text-xs font-black uppercase tracking-widest mb-5">2. Nền tảng & Phong cách</h2>
+            <h2 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
+               <ImageIcon size={14} className="text-indigo-500" /> 2. Nền tảng & Phong cách
+            </h2>
             <div className="flex flex-wrap gap-2 mb-4">
               {PLATFORMS.map(p => (
-                <button key={p.id} onClick={() => setSelectedPlatform(p)} className={`px-5 py-2.5 rounded-full text-[10px] font-black border-2 transition-all flex items-center gap-2 ${selectedPlatform.id === p.id ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-100 bg-slate-50 hover:border-slate-300'}`}>
+                <button key={p.id} onClick={() => setSelectedPlatform(p)} className={`px-5 py-2.5 rounded-full text-[10px] font-black border-2 transition-all flex items-center gap-2 ${selectedPlatform.id === p.id ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'border-slate-100 bg-slate-50 hover:border-slate-300'}`}>
                   {p.icon} {p.name}
                 </button>
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {STYLES.map(style => (
-                <button key={style.id} onClick={() => setSelectedStyle(style)} className={`p-3 rounded-2xl text-[9px] font-black border-2 transition-all uppercase ${selectedStyle.id === style.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-slate-100 bg-slate-50'}`}>
+                <button key={style.id} onClick={() => setSelectedStyle(style)} className={`p-3 rounded-2xl text-[9px] font-black border-2 transition-all uppercase ${selectedStyle.id === style.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}>
                   {style.name}
                 </button>
               ))}
@@ -201,26 +223,30 @@ export default function App() {
           </div>
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-widest mb-2">3. Nội dung thông điệp</h2>
-            <input type="text" value={mainTitle} onChange={e => setMainTitle(e.target.value)} placeholder="Tiêu đề quảng cáo (ví dụ: Giảm giá 50%)..." className="w-full p-5 border-2 border-slate-100 rounded-3xl text-xs outline-none bg-slate-50 focus:border-indigo-500 font-bold uppercase transition-all" />
-            <button onClick={generateDesign} disabled={isGenerating} className="w-full py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all">
+            <h2 className="text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+              <Zap size={14} className="text-indigo-500" /> 3. Thông điệp
+            </h2>
+            <input type="text" value={mainTitle} onChange={e => setMainTitle(e.target.value)} placeholder="Tiêu đề quảng cáo (ví dụ: Sale Off 50%)..." className="w-full p-5 border-2 border-slate-100 rounded-3xl text-xs outline-none bg-slate-50 focus:border-indigo-500 font-bold uppercase transition-all shadow-inner" />
+            <button onClick={generateDesign} disabled={isGenerating} className="w-full py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-50">
               {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-              {isGenerating ? "AI ĐANG XỬ LÝ..." : "XUẤT BẢN THIẾT KẾ"}
+              {isGenerating ? "Hệ thống đang xử lý..." : "Xuất bản thiết kế ngay"}
             </button>
             {error && (
-              <div className="p-4 bg-rose-50 border-2 border-rose-100 rounded-3xl text-rose-600 text-[10px] font-bold flex items-center gap-2 animate-pulse">
-                <AlertCircle size={14} /> {error}
+              <div className="p-5 bg-rose-50 border-2 border-rose-100 rounded-3xl text-rose-600 text-[10px] font-black uppercase flex items-start gap-3 animate-pulse">
+                <AlertCircle size={16} className="shrink-0" />
+                <p className="leading-relaxed">{error}</p>
               </div>
             )}
           </div>
         </div>
 
+        {/* Panel Kết quả */}
         <div className="bg-slate-900 rounded-[4rem] p-8 flex items-center justify-center border-[12px] border-slate-800 shadow-2xl relative min-h-[600px] overflow-hidden">
           {resultImage ? (
             <div className="relative group animate-in fade-in zoom-in duration-700">
               <img src={resultImage} alt="Kết quả AI" className="max-w-full max-h-[70vh] rounded-2xl shadow-2xl" />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-2xl backdrop-blur-sm">
-                <a href={resultImage} download="ai-marketing-poster.png" className="bg-white text-indigo-600 p-4 rounded-full shadow-2xl hover:scale-110 transition-transform">
+                <a href={resultImage} download={`ai-marketing-${Date.now()}.png`} className="bg-white text-indigo-600 p-4 rounded-full shadow-2xl hover:scale-110 transition-transform">
                   <Download size={24} />
                 </a>
               </div>
@@ -228,15 +254,15 @@ export default function App() {
           ) : (
             <div className="text-center space-y-4 opacity-30">
               <Monitor size={80} className="mx-auto text-slate-500" strokeWidth={1} />
-              <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">Kết quả thiết kế</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">Preview Studio</p>
             </div>
           )}
 
           {isGenerating && (
-            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl flex flex-col items-center justify-center text-white z-10 p-10 text-center">
-               <Loader2 className="animate-spin text-indigo-500 mb-4" size={50} strokeWidth={2} />
-               <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-2">HỆ THỐNG IMAGEN 4.0</h3>
-               <p className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest">{statusMsg}</p>
+            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl flex flex-col items-center justify-center text-white z-10 p-10 text-center animate-in fade-in">
+               <Loader2 className="animate-spin text-indigo-500 mb-6" size={50} strokeWidth={2} />
+               <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-2">Imagen 4.0 System</h3>
+               <p className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest leading-relaxed">{statusMsg}</p>
             </div>
           )}
         </div>
