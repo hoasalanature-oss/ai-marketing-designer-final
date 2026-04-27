@@ -10,10 +10,11 @@ import {
   Package, 
   FileSearch, 
   Monitor, 
-  AlertCircle
+  AlertCircle,
+  Zap,
+  Image as ImageIcon
 } from 'lucide-react';
 
-// Biểu tượng Zalo SVG tùy chỉnh
 const ZaloIcon = ({ size = 18, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3l-1.5 4.5Z" />
@@ -22,10 +23,10 @@ const ZaloIcon = ({ size = 18, className = "" }: { size?: number; className?: st
 );
 
 const STYLES = [
-  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio portrait photography, ultra-sharp facial details, professional lighting, clean commercial background' },
-  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business advertisement style, clean graphic design elements, professional color grading, minimalist corporate layout' },
-  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D product and character render, soft global illumination, octane render, stylized environment' },
-  { id: 'editorial', name: 'Tạp chí Thời thượng', prompt: 'editorial magazine cover style, minimalist fashion layout, soft shadows, high-fashion corporate aesthetic' },
+  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio photography, soft commercial lighting, clean professional background, sharp focus' },
+  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business advertisement style, clean graphic elements, professional color grading, minimalist layout' },
+  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D product render, soft global illumination, octane render style, stylized environment' },
+  { id: 'editorial', name: 'Tạp chí Fashion', prompt: 'editorial fashion magazine style, high-end aesthetics, dramatic lighting, premium feel' },
 ];
 
 const PLATFORMS = [
@@ -42,16 +43,6 @@ const POSE_TEMPLATES = [
   { id: 'presenting', name: 'Thuyết trình', path: '<circle cx="50" cy="20" r="10"/><line x1="50" y1="30" x2="50" y2="65"/><path d="M50 40 L20 25"/><path d="M50 40 L80 25"/><path d="M50 65 L40 95"/><path d="M50 65 L60 95"/>' },
   { id: 'sitting', name: 'Ngồi làm', path: '<circle cx="40" cy="30" r="10"/><line x1="40" y1="40" x2="40" y2="70"/><path d="M40 50 L60 50 L60 70"/><path d="M40 70 L60 70 L60 95"/><path d="M30 65 L50 65 L50 95"/><rect x="60" y="65" width="25" height="5" fill="currentColor" stroke="none"/><line x1="70" y1="65" x2="70" y2="55"/><line x1="80" y1="65" x2="80" y2="50"/>' }
 ];
-
-// =====================================================================
-// ⚠️ BƯỚC CỰC KỲ QUAN TRỌNG KHI COPY LÊN GITHUB (CHO VERCEL):
-// Khi dán code này vào GitHub, bạn HÃY TÌM VÀ XÓA dòng code số 48 bên dưới:
-// const apiKey = "";
-// 
-// VÀ THAY THẾ NÓ BẰNG DÒNG LỆNH SAU ĐỂ VERCEL NHẬN DIỆN ĐƯỢC API KEY:
-// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-// =====================================================================
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 interface ImageData {
   preview: string | null;
@@ -74,6 +65,7 @@ export default function App() {
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [selectedPlatform, setSelectedPlatform] = useState(PLATFORMS[0]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,89 +83,73 @@ export default function App() {
     }
   };
 
-  const convertSvgToPngBase64 = async (svgPath: string | null): Promise<string | null> => {
-    return new Promise((resolve) => {
-      if (!svgPath) return resolve(null);
-      const svgContent = `<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" stroke="black" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect width="100" height="100" fill="white" stroke="none" />${svgPath}</svg>`;
-      const encoded = btoa(unescape(encodeURIComponent(svgContent)));
-      const url = `data:image/svg+xml;base64,${encoded}`;
-      
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 512, 512);
-          resolve(canvas.toDataURL('image/png').split(',')[1]);
-        }
-      };
-      img.src = url;
-    });
-  };
-
   const generateDesign = async () => {
     if (!images.human.base64 || !images.product.base64) {
       setError("Hệ thống cần ít nhất ảnh NHÂN VẬT và ảnh SẢN PHẨM.");
       return;
     }
     
+    const API_KEY = "";
+
     setIsGenerating(true);
     setError(null);
     setResultImage(null);
-
-    const parts: any[] = [];
-    let corePrompt = `TASK: Professional Marketing Image for ${selectedPlatform.name}. Style: ${selectedStyle.prompt}. Main Message: "${mainTitle}". Integrate the product naturally and preserve the human facial identity completely.`;
-
-    if (selectedPose.path) {
-      const poseBase64 = await convertSvgToPngBase64(selectedPose.path);
-      if (poseBase64) {
-        parts.push({ text: "ACTION POSE GUIDE:" }, { inlineData: { mimeType: "image/png", data: poseBase64 } });
-      }
-    }
-
-    parts.push(
-      { text: "HUMAN FACE SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.human.base64 } },
-      { text: "PRODUCT SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.product.base64 } }
-    );
-
-    if (images.reference.base64) {
-        parts.push({ text: "BACKGROUND STYLE REFERENCE:" }, { inlineData: { mimeType: "image/png", data: images.reference.base64 } });
-    }
-
-    parts.push({ text: corePrompt });
-
+    
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
+      // BƯỚC 1: Dùng Gemini 1.5 Flash (Mở cho mọi tài khoản) để phân tích ảnh
+      setStatusMsg("Bước 1: Phân tích nhân dạng & sản phẩm (Gemini 1.5 Flash)...");
+      
+      const analysisParts = [
+        { text: `Analyze these images. Image 1 is a person's face. Image 2 is a product. ${images.reference.base64 ? 'Image 3 is a background style reference.' : ''} Create a highly detailed English prompt to generate a professional marketing poster using an AI image generator. The person from Image 1 MUST be featured prominently, interacting with the product from Image 2. The background and mood should match this style: ${selectedStyle.prompt}. Add the text: "${mainTitle}" clearly. Maintain high commercial quality.` },
+        { inlineData: { mimeType: "image/png", data: images.human.base64 } },
+        { inlineData: { mimeType: "image/png", data: images.product.base64 } }
+      ];
+
+      if (images.reference.base64) {
+        analysisParts.push({ inlineData: { mimeType: "image/png", data: images.reference.base64 } });
+      }
+
+      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          contents: [{ parts }], 
-          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } 
+        body: JSON.stringify({
+          contents: [{ parts: analysisParts }]
         })
       });
 
-      const data = await response.json();
+      const analysisData = await analysisResponse.json();
+      if (analysisData.error) throw new Error(`Lỗi phân tích (Gemini): ${analysisData.error.message}`);
       
-      // Bắt lỗi cụ thể nếu người dùng quên chưa sửa Key trên GitHub
-      if (data.error) {
-        if (data.error.message.includes("API key not valid") || data.error.message.includes("unregistered callers")) {
-           throw new Error("LỖI API KEY: Bạn đã quên chưa thay đổi dòng lệnh `apiKey` trên GitHub (Hoặc chưa Redeploy trên Vercel). Vui lòng xem kỹ dòng số 48 trong code.");
-        }
-        throw new Error(`Lỗi Google API: ${data.error.message}`);
+      const promptText = analysisData.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!promptText) throw new Error("Không thể tạo kịch bản thiết kế từ ảnh của bạn.");
+
+      // BƯỚC 2: Dùng Imagen 3.0 (Mô hình tạo ảnh chuẩn của Google) để vẽ kết quả
+      setStatusMsg("Bước 2: AI đang vẽ bản thảo marketing (Imagen 3.0)...");
+      
+      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instances: [{ prompt: promptText }],
+          parameters: { sampleCount: 1 }
+        })
+      });
+
+      const imagenData = await imagenResponse.json();
+      if (imagenData.error) throw new Error(`Lỗi tạo ảnh (Imagen 3.0): ${imagenData.error.message}`);
+
+      const base64Image = imagenData.predictions?.[0]?.bytesBase64Encoded;
+      if (base64Image) {
+        setResultImage(`data:image/png;base64,${base64Image}`);
+      } else {
+        throw new Error("Hệ thống vẽ ảnh gặp sự cố, vui lòng thử lại.");
       }
 
-      const base64 = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
-      if (base64) {
-        setResultImage(`data:image/png;base64,${base64}`);
-      } else {
-        throw new Error("AI không trả về ảnh. Hãy kiểm tra lại nội dung ảnh đầu vào.");
-      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setIsGenerating(false);
+      setStatusMsg("");
     }
   };
 
@@ -199,7 +175,7 @@ export default function App() {
           <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-200"><Sparkles className="text-white" size={20} /></div>
           <div>
             <h1 className="font-black tracking-tighter uppercase text-lg leading-none">AI DESIGNER <span className="text-indigo-600">PRO</span></h1>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Marketing Studio AI</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Marketing Studio AI (Imagen 3.0)</p>
           </div>
         </div>
       </header>
@@ -291,7 +267,7 @@ export default function App() {
             <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl flex flex-col items-center justify-center text-white z-10 p-10 text-center animate-in fade-in">
                <Loader2 className="animate-spin text-indigo-500 mb-6" size={50} strokeWidth={2} />
                <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-2">HỆ THỐNG MARKETING AI</h3>
-               <p className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest leading-relaxed">Đang phân tích diện mạo, sản phẩm và áp dụng phong cách thiết kế...</p>
+               <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest leading-relaxed">{statusMsg}</p>
             </div>
           )}
         </div>
