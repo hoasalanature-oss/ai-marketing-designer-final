@@ -10,10 +10,7 @@ import {
   Package, 
   FileSearch, 
   Monitor, 
-  AlertCircle,
-  BadgeCheck,
-  Zap,
-  Image as ImageIcon
+  AlertCircle
 } from 'lucide-react';
 
 // Biểu tượng Zalo SVG tùy chỉnh
@@ -25,10 +22,10 @@ const ZaloIcon = ({ size = 18, className = "" }: { size?: number; className?: st
 );
 
 const STYLES = [
-  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio photography, soft commercial lighting, clean professional background, sharp focus' },
-  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business advertisement style, clean graphic elements, professional color grading, minimalist layout' },
-  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D product render, soft global illumination, octane render style, stylized environment' },
-  { id: 'editorial', name: 'Tạp chí Fashion', prompt: 'editorial fashion magazine style, high-end aesthetics, dramatic lighting, premium feel' },
+  { id: 'pro_photo', name: 'Nhiếp ảnh Studio', prompt: 'high-end studio portrait photography, ultra-sharp facial details, professional lighting, clean commercial background' },
+  { id: 'business_ads', name: 'Poster Doanh nghiệp', prompt: 'modern business advertisement style, clean graphic design elements, professional color grading, minimalist corporate layout' },
+  { id: '3d_premium', name: '3D Render Cao cấp', prompt: 'premium 3D product and character render, soft global illumination, octane render, stylized environment' },
+  { id: 'editorial', name: 'Tạp chí Thời thượng', prompt: 'editorial magazine cover style, minimalist fashion layout, soft shadows, high-fashion corporate aesthetic' },
 ];
 
 const PLATFORMS = [
@@ -37,13 +34,29 @@ const PLATFORMS = [
   { id: 'zalo_diary', name: 'Zalo Nhật ký', icon: <ZaloIcon size={18} /> },
 ];
 
+const POSE_TEMPLATES = [
+  { id: 'none', name: 'Tự do', path: null },
+  { id: 'crossed', name: 'Khoanh tay', path: '<circle cx="50" cy="20" r="10"/><line x1="50" y1="30" x2="50" y2="65"/><path d="M30 45 L50 55 L70 45"/><path d="M50 65 L40 95"/><path d="M50 65 L60 95"/>' },
+  { id: 'point_right', name: 'Chỉ tay', path: '<circle cx="50" cy="20" r="10"/><line x1="50" y1="30" x2="50" y2="65"/><path d="M50 40 L35 55"/><path d="M50 40 L85 30"/><path d="M50 65 L40 95"/><path d="M50 65 L60 95"/>' },
+  { id: 'holding', name: 'Cầm sản phẩm', path: '<circle cx="50" cy="20" r="10"/><line x1="50" y1="30" x2="50" y2="65"/><path d="M30 50 L45 45"/><path d="M70 50 L55 45"/><rect x="45" y="35" width="10" height="10" fill="currentColor" stroke="none"/><path d="M50 65 L40 95"/><path d="M50 65 L60 95"/>' },
+  { id: 'presenting', name: 'Thuyết trình', path: '<circle cx="50" cy="20" r="10"/><line x1="50" y1="30" x2="50" y2="65"/><path d="M50 40 L20 25"/><path d="M50 40 L80 25"/><path d="M50 65 L40 95"/><path d="M50 65 L60 95"/>' },
+  { id: 'sitting', name: 'Ngồi làm', path: '<circle cx="40" cy="30" r="10"/><line x1="40" y1="40" x2="40" y2="70"/><path d="M40 50 L60 50 L60 70"/><path d="M40 70 L60 70 L60 95"/><path d="M30 65 L50 65 L50 95"/><rect x="60" y="65" width="25" height="5" fill="currentColor" stroke="none"/><line x1="70" y1="65" x2="70" y2="55"/><line x1="80" y1="65" x2="80" y2="50"/>' }
+];
+
+// =====================================================================
+// ⚠️ BƯỚC CỰC KỲ QUAN TRỌNG KHI COPY LÊN GITHUB (CHO VERCEL):
+// Khi dán code này vào GitHub, bạn HÃY TÌM VÀ XÓA dòng code số 48 bên dưới:
+// const apiKey = "";
+// 
+// VÀ THAY THẾ NÓ BẰNG DÒNG LỆNH SAU ĐỂ VERCEL NHẬN DIỆN ĐƯỢC API KEY:
+// const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+// =====================================================================
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
 interface ImageData {
   preview: string | null;
   base64: string | null;
 }
-
-// API Key mặc định để trống, hệ thống sẽ tự nạp tại runtime hoặc lấy từ biến môi trường
-const apiKey = "";
 
 export default function App() {
   const [images, setImages] = useState<{
@@ -57,10 +70,10 @@ export default function App() {
   });
   
   const [mainTitle, setMainTitle] = useState('');
+  const [selectedPose, setSelectedPose] = useState(POSE_TEMPLATES[0]);
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [selectedPlatform, setSelectedPlatform] = useState(PLATFORMS[0]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [statusMsg, setStatusMsg] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,99 +91,102 @@ export default function App() {
     }
   };
 
+  const convertSvgToPngBase64 = async (svgPath: string | null): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!svgPath) return resolve(null);
+      const svgContent = `<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" stroke="black" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect width="100" height="100" fill="white" stroke="none" />${svgPath}</svg>`;
+      const encoded = btoa(unescape(encodeURIComponent(svgContent)));
+      const url = `data:image/svg+xml;base64,${encoded}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 512, 512);
+          resolve(canvas.toDataURL('image/png').split(',')[1]);
+        }
+      };
+      img.src = url;
+    });
+  };
+
   const generateDesign = async () => {
     if (!images.human.base64 || !images.product.base64) {
-      setError("Bạn cần tải lên ít nhất ảnh Nhân vật và ảnh Sản phẩm.");
+      setError("Hệ thống cần ít nhất ảnh NHÂN VẬT và ảnh SẢN PHẨM.");
       return;
     }
     
-    // Cách lấy API Key an toàn để tránh lỗi biên dịch "import.meta"
-    let finalKey = apiKey;
-    if (!finalKey) {
-      try {
-        // @ts-ignore
-        finalKey = (import.meta as any).env.VITE_GEMINI_API_KEY || "";
-      } catch (e) {
-        finalKey = "";
-      }
-    }
-    
-    if (!finalKey) {
-      setError("Lỗi: Không tìm thấy API Key. Hãy cấu hình VITE_GEMINI_API_KEY trên Vercel và chọn Redeploy.");
-      return;
-    }
-
     setIsGenerating(true);
     setError(null);
     setResultImage(null);
-    
+
+    const parts: any[] = [];
+    let corePrompt = `TASK: Professional Marketing Image for ${selectedPlatform.name}. Style: ${selectedStyle.prompt}. Main Message: "${mainTitle}". Integrate the product naturally and preserve the human facial identity completely.`;
+
+    if (selectedPose.path) {
+      const poseBase64 = await convertSvgToPngBase64(selectedPose.path);
+      if (poseBase64) {
+        parts.push({ text: "ACTION POSE GUIDE:" }, { inlineData: { mimeType: "image/png", data: poseBase64 } });
+      }
+    }
+
+    parts.push(
+      { text: "HUMAN FACE SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.human.base64 } },
+      { text: "PRODUCT SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.product.base64 } }
+    );
+
+    if (images.reference.base64) {
+        parts.push({ text: "BACKGROUND STYLE REFERENCE:" }, { inlineData: { mimeType: "image/png", data: images.reference.base64 } });
+    }
+
+    parts.push({ text: corePrompt });
+
     try {
-      // BƯỚC 1: Sử dụng Gemini 1.5 Flash để phân tích ảnh và viết Prompt
-      setStatusMsg("Đang phân tích diện mạo và sản phẩm...");
-      
-      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: `Analyze these images. Image 1: Person's face. Image 2: Product. ${images.reference.base64 ? 'Image 3: Style reference.' : ''} 
-              Create a detailed English prompt for Imagen 4.0. The person from Image 1 must be interacting with the product from Image 2. 
-              The background style should be: ${selectedStyle.prompt}. 
-              Include text overlay: "${mainTitle}". Ensure it looks like a professional commercial poster.` },
-              { inlineData: { mimeType: "image/png", data: images.human.base64 } },
-              { inlineData: { mimeType: "image/png", data: images.product.base64 } },
-              ...(images.reference.base64 ? [{ inlineData: { mimeType: "image/png", data: images.reference.base64 } }] : [])
-            ]
-          }]
+        body: JSON.stringify({ 
+          contents: [{ parts }], 
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } 
         })
       });
 
-      const analysisData = await analysisResponse.json();
-      if (analysisData.error) throw new Error(analysisData.error.message);
+      const data = await response.json();
       
-      const promptText = analysisData.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!promptText) throw new Error("Không thể tạo kịch bản thiết kế.");
-
-      // BƯỚC 2: Sử dụng Imagen 4.0 để tạo ảnh (Đây là mô hình tạo ảnh ổn định nhất)
-      setStatusMsg("AI đang vẽ thiết kế marketing...");
-      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${finalKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instances: [{ prompt: promptText }],
-          parameters: { sampleCount: 1 }
-        })
-      });
-
-      const imagenData = await imagenResponse.json();
-      if (imagenData.error) throw new Error(imagenData.error.message);
-
-      const base64Image = imagenData.predictions?.[0]?.bytesBase64Encoded;
-      if (base64Image) {
-        setResultImage(`data:image/png;base64,${base64Image}`);
-      } else {
-        throw new Error("Không nhận được ảnh từ hệ thống tạo ảnh.");
+      // Bắt lỗi cụ thể nếu người dùng quên chưa sửa Key trên GitHub
+      if (data.error) {
+        if (data.error.message.includes("API key not valid") || data.error.message.includes("unregistered callers")) {
+           throw new Error("LỖI API KEY: Bạn đã quên chưa thay đổi dòng lệnh `apiKey` trên GitHub (Hoặc chưa Redeploy trên Vercel). Vui lòng xem kỹ dòng số 48 trong code.");
+        }
+        throw new Error(`Lỗi Google API: ${data.error.message}`);
       }
 
+      const base64 = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
+      if (base64) {
+        setResultImage(`data:image/png;base64,${base64}`);
+      } else {
+        throw new Error("AI không trả về ảnh. Hãy kiểm tra lại nội dung ảnh đầu vào.");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setIsGenerating(false);
-      setStatusMsg("");
     }
   };
 
   const UploadBox = ({ type, label, icon: Icon, colorClass, subLabel }: any) => (
-    <div onClick={() => (document.getElementById(`upload-${type}`) as HTMLInputElement).click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-all aspect-square relative overflow-hidden group">
+    <div onClick={() => (document.getElementById(`upload-${type}`) as HTMLInputElement).click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-all aspect-square relative overflow-hidden group bg-white">
       <input id={`upload-${type}`} type="file" onChange={(e) => handleImageUpload(type, e)} accept="image/*" className="hidden" />
       {images[type as keyof typeof images].preview ? (
         <img src={images[type as keyof typeof images].preview as string} className="absolute inset-0 w-full h-full object-cover rounded-3xl" alt={label} />
       ) : (
         <>
           <div className={`${colorClass} p-3 rounded-2xl mb-2 shadow-sm`}><Icon size={20} /></div>
-          <span className="text-[10px] font-black uppercase tracking-tight">{label}</span>
-          <span className="text-[8px] text-slate-400 uppercase tracking-widest font-bold">{subLabel}</span>
+          <span className="text-[10px] font-black uppercase tracking-tight text-center">{label}</span>
+          <span className="text-[8px] text-slate-400 uppercase tracking-widest font-bold mt-1">{subLabel}</span>
         </>
       )}
     </div>
@@ -180,39 +196,57 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-10">
       <header className="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-100"><Sparkles className="text-white" size={20} /></div>
+          <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-200"><Sparkles className="text-white" size={20} /></div>
           <div>
             <h1 className="font-black tracking-tighter uppercase text-lg leading-none">AI DESIGNER <span className="text-indigo-600">PRO</span></h1>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Marketing Studio AI v4.0</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Marketing Studio AI</p>
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
-        {/* Panel Điều khiển */}
+        {/* BẢNG ĐIỀU KHIỂN BÊN TRÁI */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
-              <Zap size={14} className="text-indigo-500" /> 1. Nguồn hình ảnh
+              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">1</span> 
+              Nguồn hình ảnh
             </h2>
             <div className="grid grid-cols-3 gap-3">
-              <UploadBox type="human" label="Nhân vật" icon={User} colorClass="bg-blue-50 text-blue-600" subLabel="Gương mặt" />
+              <UploadBox type="human" label="Nhân vật" icon={User} colorClass="bg-blue-50 text-blue-600" subLabel="Diện mạo" />
               <UploadBox type="product" label="Sản phẩm" icon={Package} colorClass="bg-emerald-50 text-emerald-600" subLabel="Vật thể" />
-              <UploadBox type="reference" label="Tham chiếu" icon={FileSearch} colorClass="bg-amber-50 text-amber-600" subLabel="Bối cảnh" />
+              <UploadBox type="reference" label="Tham chiếu" icon={FileSearch} colorClass="bg-purple-50 text-purple-600" subLabel="Bối cảnh" />
             </div>
           </div>
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
-               <ImageIcon size={14} className="text-indigo-500" /> 2. Nền tảng & Phong cách
+              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">2</span> 
+              Tư thế & Nền tảng
             </h2>
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-6">
               {PLATFORMS.map(p => (
                 <button key={p.id} onClick={() => setSelectedPlatform(p)} className={`px-5 py-2.5 rounded-full text-[10px] font-black border-2 transition-all flex items-center gap-2 ${selectedPlatform.id === p.id ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'border-slate-100 bg-slate-50 hover:border-slate-300'}`}>
                   {p.icon} {p.name}
                 </button>
               ))}
             </div>
+            <div className="grid grid-cols-6 gap-2">
+              {POSE_TEMPLATES.map(pose => (
+                <button key={pose.id} onClick={() => setSelectedPose(pose)} className={`p-2 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-2 ${selectedPose.id === pose.id ? 'border-indigo-600 bg-indigo-50/50 shadow-inner' : 'border-slate-100 hover:border-slate-200'}`}>
+                  <div className={`w-6 h-6 ${selectedPose.id === pose.id ? 'text-indigo-600' : 'text-slate-400'}`} dangerouslySetInnerHTML={{ __html: pose.path || '<svg viewBox="0 0 100 100"><rect width="100" height="100" fill="none"/></svg>' }} />
+                  <span className="text-[7px] font-black uppercase text-center">{pose.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-4">
+            <h2 className="text-xs font-black uppercase tracking-widest flex items-center gap-2 mb-2">
+              <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">3</span> 
+              Nội dung & Phong cách
+            </h2>
+            <input type="text" value={mainTitle} onChange={e => setMainTitle(e.target.value)} placeholder="Nhập tiêu đề quảng cáo (Ví dụ: Sale Off 50%)..." className="w-full p-4 border-2 border-slate-100 rounded-3xl text-xs outline-none bg-slate-50 focus:border-indigo-500 font-bold uppercase transition-all shadow-inner" />
             <div className="grid grid-cols-2 gap-2">
               {STYLES.map(style => (
                 <button key={style.id} onClick={() => setSelectedStyle(style)} className={`p-3 rounded-2xl text-[9px] font-black border-2 transition-all uppercase ${selectedStyle.id === style.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}>
@@ -220,27 +254,22 @@ export default function App() {
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
-              <Zap size={14} className="text-indigo-500" /> 3. Thông điệp
-            </h2>
-            <input type="text" value={mainTitle} onChange={e => setMainTitle(e.target.value)} placeholder="Tiêu đề quảng cáo (ví dụ: Sale Off 50%)..." className="w-full p-5 border-2 border-slate-100 rounded-3xl text-xs outline-none bg-slate-50 focus:border-indigo-500 font-bold uppercase transition-all shadow-inner" />
-            <button onClick={generateDesign} disabled={isGenerating} className="w-full py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-50">
+            
+            <button onClick={generateDesign} disabled={isGenerating} className="w-full py-5 mt-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-70 disabled:scale-100">
               {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-              {isGenerating ? "Hệ thống đang xử lý..." : "Xuất bản thiết kế ngay"}
+              {isGenerating ? "AI ĐANG TÁCH NỀN VÀ GHÉP ẢNH..." : "XUẤT BẢN THIẾT KẾ NGAY"}
             </button>
+
             {error && (
-              <div className="p-5 bg-rose-50 border-2 border-rose-100 rounded-3xl text-rose-600 text-[10px] font-black uppercase flex items-start gap-3 animate-pulse">
-                <AlertCircle size={16} className="shrink-0" />
+              <div className="p-4 bg-rose-50 border-2 border-rose-100 rounded-3xl text-rose-600 text-[10px] font-black uppercase flex items-start gap-3 mt-4">
+                <AlertCircle size={20} className="shrink-0" />
                 <p className="leading-relaxed">{error}</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Panel Kết quả */}
+        {/* KẾT QUẢ BÊN PHẢI */}
         <div className="bg-slate-900 rounded-[4rem] p-8 flex items-center justify-center border-[12px] border-slate-800 shadow-2xl relative min-h-[600px] overflow-hidden">
           {resultImage ? (
             <div className="relative group animate-in fade-in zoom-in duration-700">
@@ -261,8 +290,8 @@ export default function App() {
           {isGenerating && (
             <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl flex flex-col items-center justify-center text-white z-10 p-10 text-center animate-in fade-in">
                <Loader2 className="animate-spin text-indigo-500 mb-6" size={50} strokeWidth={2} />
-               <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-2">Imagen 4.0 System</h3>
-               <p className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest leading-relaxed">{statusMsg}</p>
+               <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-2">HỆ THỐNG MARKETING AI</h3>
+               <p className="text-[9px] font-bold text-indigo-300 uppercase tracking-widest leading-relaxed">Đang phân tích diện mạo, sản phẩm và áp dụng phong cách thiết kế...</p>
             </div>
           )}
         </div>
