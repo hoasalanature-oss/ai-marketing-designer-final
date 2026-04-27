@@ -44,6 +44,12 @@ const POSE_TEMPLATES = [
   { id: 'sitting', name: 'Ngồi làm', path: '<circle cx="40" cy="30" r="10"/><line x1="40" y1="40" x2="40" y2="70"/><path d="M40 50 L60 50 L60 70"/><path d="M40 70 L60 70 L60 95"/><path d="M30 65 L50 65 L50 95"/><rect x="60" y="65" width="25" height="5" fill="currentColor" stroke="none"/><line x1="70" y1="65" x2="70" y2="55"/><line x1="80" y1="65" x2="80" y2="50"/>' }
 ];
 
+// =========================================================================================
+// 🔴 BƯỚC CUỐI CÙNG: DÁN MÃ API CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP Ở DÒNG DƯỚI KHI LƯU LÊN GITHUB
+// Ví dụ: const apiKey = "AIzaSyDK2TeHqzp4XRcBWQw5YUPJVR-iLcKijMc";
+// =========================================================================================
+const apiKey = "AIzaSyDK2TeHqzp4XRcBWQw5YUPJVR-iLcKijMc";
+
 interface ImageData {
   preview: string | null;
   base64: string | null;
@@ -83,20 +89,40 @@ export default function App() {
     }
   };
 
+  const convertSvgToPngBase64 = async (svgPath: string | null): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!svgPath) return resolve(null);
+      const svgContent = `<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" stroke="black" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect width="100" height="100" fill="white" stroke="none" />${svgPath}</svg>`;
+      const encoded = btoa(unescape(encodeURIComponent(svgContent)));
+      const url = `data:image/svg+xml;base64,${encoded}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 512, 512);
+          resolve(canvas.toDataURL('image/png').split(',')[1]);
+        }
+      };
+      img.src = url;
+    });
+  };
+
   const generateDesign = async () => {
     if (!images.human.base64 || !images.product.base64) {
       setError("Hệ thống cần ít nhất ảnh NHÂN VẬT và ảnh SẢN PHẨM.");
       return;
     }
-    
-    const API_KEY = "";
 
     setIsGenerating(true);
     setError(null);
     setResultImage(null);
     
     try {
-      // BƯỚC 1: Dùng Gemini 1.5 Flash (Mở cho mọi tài khoản) để phân tích ảnh
+      // BƯỚC 1: Dùng Gemini 1.5 Flash để phân tích yêu cầu thiết kế
       setStatusMsg("Bước 1: Phân tích nhân dạng & sản phẩm (Gemini 1.5 Flash)...");
       
       const analysisParts = [
@@ -109,7 +135,15 @@ export default function App() {
         analysisParts.push({ inlineData: { mimeType: "image/png", data: images.reference.base64 } });
       }
 
-      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+      if (selectedPose.path) {
+        const poseBase64 = await convertSvgToPngBase64(selectedPose.path);
+        if (poseBase64) {
+          analysisParts.push({ inlineData: { mimeType: "image/png", data: poseBase64 } });
+          analysisParts[0].text += " Also, ensure the person is in a pose similar to the provided silhouette guide.";
+        }
+      }
+
+      const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -118,15 +152,18 @@ export default function App() {
       });
 
       const analysisData = await analysisResponse.json();
-      if (analysisData.error) throw new Error(`Lỗi phân tích (Gemini): ${analysisData.error.message}`);
+      
+      if (analysisData.error) {
+        throw new Error(`Lỗi Google API (Xin hãy chắc chắn bạn đã dán API Key vào code trên GitHub): ${analysisData.error.message}`);
+      }
       
       const promptText = analysisData.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!promptText) throw new Error("Không thể tạo kịch bản thiết kế từ ảnh của bạn.");
 
-      // BƯỚC 2: Dùng Imagen 3.0 (Mô hình tạo ảnh chuẩn của Google) để vẽ kết quả
+      // BƯỚC 2: Dùng Imagen 3.0 (Mô hình ổn định và mở rỗng rãi nhất) để vẽ kết quả
       setStatusMsg("Bước 2: AI đang vẽ bản thảo marketing (Imagen 3.0)...");
       
-      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${API_KEY}`, {
+      const imagenResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -136,7 +173,7 @@ export default function App() {
       });
 
       const imagenData = await imagenResponse.json();
-      if (imagenData.error) throw new Error(`Lỗi tạo ảnh (Imagen 3.0): ${imagenData.error.message}`);
+      if (imagenData.error) throw new Error(`Lỗi vẽ ảnh (Imagen 3.0): ${imagenData.error.message}`);
 
       const base64Image = imagenData.predictions?.[0]?.bytesBase64Encoded;
       if (base64Image) {
@@ -181,7 +218,6 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
-        {/* BẢNG ĐIỀU KHIỂN BÊN TRÁI */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
@@ -245,7 +281,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* KẾT QUẢ BÊN PHẢI */}
         <div className="bg-slate-900 rounded-[4rem] p-8 flex items-center justify-center border-[12px] border-slate-800 shadow-2xl relative min-h-[600px] overflow-hidden">
           {resultImage ? (
             <div className="relative group animate-in fade-in zoom-in duration-700">
