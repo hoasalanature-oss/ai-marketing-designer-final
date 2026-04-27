@@ -23,10 +23,11 @@ import {
   Languages,
   BadgeCheck,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
 
-// Biểu tượng Zalo tùy chỉnh (SVG)
+// Biểu tượng Zalo tùy chỉnh
 const ZaloIcon = ({ size = 18, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 1 1-7.6-11.7 8.38 8.38 0 0 1 3.8.9L21 3l-1.5 4.5Z" />
@@ -58,7 +59,8 @@ const POSE_TEMPLATES = [
   { id: 'sitting', name: 'Ngồi làm', path: '<circle cx="40" cy="30" r="10"/><line x1="40" y1="40" x2="40" y2="70"/><path d="M40 50 L60 50 L60 70"/><path d="M40 70 L60 70 L60 95"/><path d="M30 65 L50 65 L50 95"/><rect x="60" y="65" width="25" height="5" fill="currentColor" stroke="none"/><line x1="70" y1="65" x2="70" y2="55"/><line x1="80" y1="65" x2="80" y2="50"/>' }
 ];
 
-const apiKey = ""; // Sẽ được cung cấp qua Environment Variable
+// Thiết lập API Key trống, môi trường sẽ tự động cung cấp tại runtime
+const apiKey = "";
 
 export default function App() {
   const [images, setImages] = useState({
@@ -67,7 +69,6 @@ export default function App() {
     reference: { preview: null, base64: null }
   });
   
-  const [description, setDescription] = useState('');
   const [mainTitle, setMainTitle] = useState('');
   const [selectedPose, setSelectedPose] = useState(POSE_TEMPLATES[0]);
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
@@ -114,7 +115,7 @@ export default function App() {
 
   const generateDesign = async () => {
     if (!images.human.base64 || !images.product.base64) {
-      setError("Cần tải ảnh Nhân vật & Sản phẩm.");
+      setError("Bạn cần tải lên ảnh Nhân vật và Sản phẩm.");
       return;
     }
     
@@ -122,16 +123,16 @@ export default function App() {
     setError(null);
 
     const parts = [];
-    let corePrompt = `TASK: Marketing Image for ${selectedPlatform.name}. Style: ${selectedStyle.prompt}. Text: ${mainTitle}. Keep facial identity.`;
+    let corePrompt = `TASK: Professional Marketing Image. Style: ${selectedStyle.prompt}. Platform: ${selectedPlatform.name}. Text to include: "${mainTitle}". Preserve facial details.`;
 
     if (selectedPose.path) {
       const poseBase64 = await convertSvgToPngBase64(selectedPose.path);
-      parts.push({ text: "ACTION POSE GUIDE:" }, { inlineData: { mimeType: "image/png", data: poseBase64 } });
+      parts.push({ text: "POSE GUIDE:" }, { inlineData: { mimeType: "image/png", data: poseBase64 } });
     }
 
     parts.push(
-      { text: "HUMAN FACE SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.human.base64 } },
-      { text: "PRODUCT SOURCE:" }, { inlineData: { mimeType: "image/png", data: images.product.base64 } },
+      { text: "FACE REFERENCE:" }, { inlineData: { mimeType: "image/png", data: images.human.base64 } },
+      { text: "PRODUCT TO INTEGRATE:" }, { inlineData: { mimeType: "image/png", data: images.product.base64 } },
       { text: corePrompt }
     );
 
@@ -139,24 +140,36 @@ export default function App() {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
+        body: JSON.stringify({ 
+          contents: [{ parts }], 
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } 
+        })
       });
 
       const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(`Google API Error: ${data.error.message}`);
+      }
+
       const base64 = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-      if (base64) setResultImage(`data:image/png;base64,${base64}`);
+      if (base64) {
+        setResultImage(`data:image/png;base64,${base64}`);
+      } else {
+        throw new Error("AI không trả về ảnh. Có thể mô tả bị từ chối hoặc hết hạn mức.");
+      }
     } catch (err) {
-      setError("Lỗi kết nối. Vui lòng thử lại.");
+      setError(err.message);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const UploadBox = ({ type, label, icon: Icon, colorClass, subLabel }: any) => (
-    <div onClick={() => (document.getElementById(`upload-${type}`) as any).click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-all aspect-square relative overflow-hidden group">
+  const UploadBox = ({ type, label, icon: Icon, colorClass, subLabel }) => (
+    <div onClick={() => document.getElementById(`upload-${type}`).click()} className="border-2 border-dashed border-slate-200 rounded-3xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-all aspect-square relative overflow-hidden group">
       <input id={`upload-${type}`} type="file" onChange={(e) => handleImageUpload(type, e)} accept="image/*" className="hidden" />
-      {images[type as keyof typeof images].preview ? (
-        <img src={images[type as keyof typeof images].preview || ""} className="absolute inset-0 w-full h-full object-cover rounded-3xl" alt={label} />
+      {images[type].preview ? (
+        <img src={images[type].preview} className="absolute inset-0 w-full h-full object-cover rounded-3xl" alt={label} />
       ) : (
         <>
           <div className={`${colorClass} p-3 rounded-2xl mb-2`}><Icon size={20} /></div>
@@ -177,7 +190,6 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
-        {/* Panel Trái */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-4">1. Nguồn hình ảnh</h2>
@@ -191,11 +203,11 @@ export default function App() {
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
             <h2 className="text-xs font-black uppercase tracking-widest mb-4">2. Dáng đứng & Nền tảng</h2>
             <div className="flex flex-wrap gap-2 mb-4">
-              {PLATFORMS.slice(0, 3).map(p => (
+              {PLATFORMS.map(p => (
                 <button key={p.id} onClick={() => setSelectedPlatform(p)} className={`px-4 py-2 rounded-full text-[10px] font-bold border-2 transition-all ${selectedPlatform.id === p.id ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-100 bg-slate-50'}`}>{p.name}</button>
               ))}
             </div>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-6 gap-2">
               {POSE_TEMPLATES.map(pose => (
                 <button key={pose.id} onClick={() => setSelectedPose(pose)} className={`p-2 rounded-xl border-2 transition-all ${selectedPose.id === pose.id ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100'}`}>
                   <div className="w-8 h-8 mx-auto" dangerouslySetInnerHTML={{ __html: pose.path || '' }} />
@@ -207,17 +219,27 @@ export default function App() {
 
           <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-3">
              <input type="text" value={mainTitle} onChange={e => setMainTitle(e.target.value)} placeholder="Tiêu đề nội dung quảng cáo..." className="w-full p-4 border rounded-2xl text-xs outline-none bg-slate-50 focus:border-indigo-500 font-bold uppercase" />
-             <button onClick={generateDesign} disabled={isGenerating} className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-3">
+             <button onClick={generateDesign} disabled={isGenerating} className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-transform">
                {isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />}
                {isGenerating ? "Đang xử lý AI..." : "Xuất bản thiết kế"}
              </button>
+             {error && (
+               <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-start gap-3 text-rose-600 animate-in fade-in slide-in-from-top-2">
+                 <AlertCircle size={20} className="shrink-0" />
+                 <p className="text-[10px] font-bold leading-tight">{error}</p>
+               </div>
+             )}
           </div>
         </div>
 
-        {/* Panel Phải */}
         <div className="bg-slate-900 rounded-[3rem] p-6 flex items-center justify-center border-[10px] border-slate-800 shadow-2xl relative min-h-[500px]">
           {resultImage ? (
-            <img src={resultImage} alt="Kết quả" className="max-w-full max-h-full rounded-2xl shadow-2xl animate-in fade-in zoom-in" />
+            <div className="relative group">
+              <img src={resultImage} alt="Kết quả" className="max-w-full max-h-full rounded-2xl shadow-2xl animate-in fade-in zoom-in" />
+              <a href={resultImage} download="marketing-design.png" className="absolute bottom-4 right-4 bg-white p-3 rounded-full text-indigo-600 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                <Download size={20} />
+              </a>
+            </div>
           ) : (
             <div className="text-center text-slate-700">
               <Monitor size={60} className="mx-auto opacity-20 mb-4" />
