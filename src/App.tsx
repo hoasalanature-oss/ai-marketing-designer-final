@@ -48,7 +48,7 @@ const POSE_TEMPLATES = [
 // 🔴 BƯỚC CUỐI CÙNG: DÁN MÃ API CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP Ở DÒNG DƯỚI KHI LƯU LÊN GITHUB
 // Ví dụ: const apiKey = "AIzaSyDK2TeHqzp4XRcBWQw5YUPJVR-iLcKijMc";
 // =========================================================================================
-const apiKey = "AIzaSyDK2TeHqzp4XRcBWQw5YUPJVR-iLcKijMc";
+const apiKey = "AIzaSyAgca6PQTsjTHvSDSyCpuQvOzjx5DGBbd4";
 
 interface ImageData {
   preview: string | null;
